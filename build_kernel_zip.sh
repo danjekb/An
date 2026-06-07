@@ -88,10 +88,10 @@ else
     ZIP_NAME="${AUTHOR}_${BUILD_DATE}_${ROM_TYPE}_KSU-Next-${KSU_VERSION}_${DEVICE}.zip"
 fi
 
-# ─── Sanity checks ────────────────────────────────────────────────────────────
-[[ "$(basename "$KERNEL_ROOT")" == "android_kernel_samsung_sm7325_a52s_5g" ]] \
-    || die "Run this script from the kernel root (android_kernel_samsung_sm7325_a52s_5g/)"
-
+# Wymagane pliki/katalogi – jeśli istnieją, to znaczy, że jesteśmy we właściwym miejscu
+[[ -f "build_kernel_zip.sh" && -d "arch/arm64/configs/vendor" && -f "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig" ]] \
+    || die "Script must be run from the kernel root directory (missing required files)"
+    
 for cmd in curl unzip zip cpio find sed git uname tar grep nproc cp chmod depmod; do
     command -v "$cmd" &>/dev/null || die "Required command not found: $cmd"
 done
