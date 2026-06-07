@@ -486,3 +486,31 @@ echo -e "  Root:       ${ROOT_DISPLAY}"
 echo -e "  Date:       ${BUILD_DATE}"
 echo -e "  Output:     ${ZIP_NAME}"
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${NC}"
+
+# ─── Step 14: Direct GitHub Release Push ──────────────────────────────────────
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    info "GitHub Actions wykryte! Rozpoczynam wrzucanie do GitHub Releases..."
+    
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+        die "Zmienna środowiskowa GITHUB_TOKEN nie istnieje! Nie można utworzyć Release."
+    fi
+
+    RUN_NUM="${GITHUB_RUN_NUMBER:-1}"
+    TAG_NAME="build-${CURRENT_BRANCH}-${RUN_NUM}"
+    RELEASE_TITLE="SlopKernel: ${ZIP_NAME}"
+
+    info "Tworzenie wydania z tagiem: ${TAG_NAME}..."
+    
+    gh release create "${TAG_NAME}" "${KERNEL_ROOT}/${ZIP_NAME}" \
+        --title "${RELEASE_TITLE}" \
+        --notes "### SlopKernel Automated Build
+- **Gałąź:** \`${CURRENT_BRANCH}\`
+- **Commit:** \`${GITHUB_SHA:-unknown}\`
+- **Data kompilacji:** \`${BUILD_DATE}\`
+- **Metoda Root:** \`${ROOT_DISPLAY}\`" || die "Błąd gh CLI podczas tworzenia Release"
+
+    success "Wydanie GitHub Release utworzone, plik ZIP został przesłany!"
+else
+    warn "Skrypt nie został uruchomiony w GitHub Actions. Pomijam krok Release."
+fi
+
