@@ -26,12 +26,13 @@ cleanup_tmp() {
 trap cleanup_tmp EXIT
 
 # ─── Hardcoded config ─────────────────────────────────────────────────────────
-AUTHOR="bone-machine"
+AUTHOR="SlopKernel"
 DEVICE="a52sxq"
-KBUILD_BUILD_USER="bone-machine"
+KBUILD_BUILD_USER="SlopKernel"
 KBUILD_BUILD_HOST="rios"
 CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz"
 MAGISK_APK_URL="https://github.com/topjohnwu/Magisk/releases/download/v30.7/Magisk-v30.7.apk"
+
 
 # Script lives in the kernel root — resolve its real location regardless of cwd
 KERNEL_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -70,23 +71,21 @@ NO_KSU_BRANCHES=("main" "aosp")
 if [[ " ${NO_KSU_BRANCHES[*]} " == *" ${CURRENT_BRANCH} "* ]]; then
     KSU_VERSION="none"
 else
-    KSU_VERSION="$(git -C "${KERNEL_ROOT}/KernelSU-Next" describe --tags --abbrev=0 2>/dev/null \
-        || echo 'unknown')"
+    KSU_VERSION="$(git -C "${KERNEL_ROOT}/KernelSU-Next" describe --tags --abbrev=0 2>/dev/null | tr -d '\r\n' || echo 'unknown')"
 fi
 
-# Display string for root solution
 if [[ "$KSU_VERSION" == "none" ]]; then
     ROOT_DISPLAY="none"
 else
-    ROOT_DISPLAY="KernelSU-Next ${KSU_VERSION}"
+    ROOT_DISPLAY="KernelSU-Next $(echo "${KSU_VERSION}" | tr -d '\r\n ')"
 fi
 
-# ZIP name: drop the KSU-Next segment on branches that don't ship it
 if [[ "$KSU_VERSION" == "none" ]]; then
     ZIP_NAME="${AUTHOR}_${BUILD_DATE}_${ROM_TYPE}_${DEVICE}.zip"
 else
     ZIP_NAME="${AUTHOR}_${BUILD_DATE}_${ROM_TYPE}_KSU-Next-${KSU_VERSION}_${DEVICE}.zip"
 fi
+
 
 # Wymagane pliki/katalogi – jeśli istnieją, to znaczy, że jesteśmy we właściwym miejscu
 [[ -f "build_kernel_zip.sh" && -d "arch/arm64/configs/vendor" && -f "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig" ]] \
