@@ -1,0 +1,111 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ksu-next-oneui
+      - ksu-next-aosp
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Flashable ZIP
+    runs-on: ubuntu-24.04
+
+    env:
+      KBUILD_BUILD_USER: bone-machine
+      KBUILD_BUILD_HOST: github-actions
+      JOBS: 12
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            cpio \
+            curl \
+            dwarves \
+            flex \
+            git \
+            kmod \
+            libelf-dev \
+            libssl-dev \
+            python3 \
+            rsync \
+            sed \
+            tar \
+            unzip \
+            zip \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu
+
+      - name: Restore clang cache
+        uses: actions/cache@v4
+        with:
+          path: toolchain/clang
+          key: clang-r530567
+
+      - name: Verify repository
+        run: |
+          echo "Branch: ${GITHUB_REF_NAME}"
+          echo "Commit: ${GITHUB_SHA}"
+          echo "CPU threads: $(nproc)"
+
+          test -f build_kernel_zip.sh || {
+            echo "build_kernel_zip.sh not found!"
+            exit 1
+          }
+
+      - name: Make build script executable
+        run: chmod +x build_kernel_zip.sh
+
+      - name: Build kernel
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          ./build_kernel_zip.sh
+
+      - name: Find generated ZIP
+        id: zip
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No flashable ZIP generated!"
+            exit 1
+          fi
+
+          echo "Found: $ZIP_FILE"
+          echo "zip_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ github.ref_name }}
+          path: ${{ steps.zip.outputs.zip_file }}
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-${{ github.ref_name }}
+          path: |
+            out/.config
+            out/System.map
+          if-no-files-found: ignore
