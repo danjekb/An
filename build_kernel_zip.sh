@@ -49,7 +49,11 @@ UPDATE_BINARY="${TEMPLATE_ZIP_DIR}/META-INF/com/google/android/update-binary"
 BUILD_DATE="$(date +%Y-%m-%d)"
 
 # Detect ROM type from current git branch
-CURRENT_BRANCH="$(git -C "${KERNEL_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+if [[ -n "${GITHUB_REF_NAME:-}" ]]; then
+    CURRENT_BRANCH="${GITHUB_REF_NAME}"
+else
+    CURRENT_BRANCH="$(git -C "${KERNEL_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+fi
 case "$CURRENT_BRANCH" in
     main)      ROM_TYPE="One-UI" ;;
     *oneui*)   ROM_TYPE="One-UI" ;;
