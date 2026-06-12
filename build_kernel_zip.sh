@@ -513,4 +513,6 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
 else
     warn "Skrypt nie został uruchomiony w GitHub Actions. Pomijam krok Release."
 fi
+exit 0
+}
 
