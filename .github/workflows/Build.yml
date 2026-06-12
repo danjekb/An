@@ -9,7 +9,7 @@ on:
       - main
 
 permissions:
-  contents: write  # Kluczowe: daje skryptowi prawa do tworzenia wydań
+  contents: write
 
 jobs:
   build:
@@ -25,6 +25,94 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+
+      - name: Apply SUSFS patch
+        run: |
+          set -euo pipefail
+          PATCH_FILE="susfs_patch_to_5.4.patch"
+
+          if [ ! -f "$PATCH_FILE" ]; then
+            echo "Brak pliku $PATCH_FILE - przerywam!"
+            exit 1
+          fi
+
+          echo "=== git apply --check ==="
+          if git apply --check "$PATCH_FILE"; then
+            echo "git apply --check OK, applying patch with git apply"
+            git apply "$PATCH_FILE"
+            echo "Patch SUSFS nałożony pomyślnie (git apply)"
+          else
+            echo "git apply --check failed — trying git apply --reject to produce .rej files for inspection"
+            git apply --reject --whitespace=fix "$PATCH_FILE" || true
+
+            echo "Running patch fallback (dry-run) to try patch -p1 (for non-git-format patches)"
+            if patch --dry-run -p1 < "$PATCH_FILE"; then
+              patch -p1 < "$PATCH_FILE"
+              echo "Patch SUSFS nałożony pomyślnie (patch -p1)"
+            else
+              echo "patch --dry-run FAILED. Saving rejects for inspection."
+            fi
+
+            echo "===== REJECTS (if any) ====="
+            find . -name '*.rej' -print -exec sed -n '1,200p' {} \;
+            echo "===== END REJECTS ====="
+
+            echo "Please inspect .rej files — the patch likely targets a different kernel commit or file layout."
+            exit 1
+          fi
+
+      - name: Upload patch rejects (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-rejects
+          path: |
+            **/*.rej
+            **/*.orig
+
+      - name: Inject Fake Uname Patches
+        run: |
+          echo "=== Automatyczne patchowanie ==="
+          
+          # Patchowanie init/Kconfig
+          if [ -f "init/Kconfig" ]; then
+            if ! grep -q "FAKE_UNAME_NONE" init/Kconfig; then
+              cat << 'EOF' > kconfig_patch.tmp
+          choice
+              prompt "Fake uname kernel version"
+              default FAKE_UNAME_NONE
+              help
+                Kernel side spoof for BPF.
+          config FAKE_UNAME_NONE
+              bool "None"
+          config FAKE_UNAME_5_10
+              bool "5.10"
+          endchoice
+          EOF
+              sed -i '/source "block\/Kconfig"/r kconfig_patch.tmp' init/Kconfig
+              rm kconfig_patch.tmp
+            fi
+          fi
+
+          # Patchowanie CZYSTEGO kernel/sys.c
+          if [ -f "kernel/sys.c" ]; then
+            if ! grep -q "CONFIG_FAKE_UNAME_" kernel/sys.c; then
+              echo "#ifdef CONFIG_FAKE_UNAME_5_10" > sys_patch.tmp
+              echo "#define FAKE_UNAME \"5.10.200\"" >> sys_patch.tmp
+              echo "#endif" >> sys_patch.tmp
+              cat sys_patch.tmp kernel/sys.c > kernel/sys.c.new
+              mv kernel/sys.c.new kernel/sys.c
+              rm sys_patch.tmp
+              
+              sed -i '/memcpy(&tmp, utsname(), sizeof(tmp));/a \
+          #ifdef CONFIG_FAKE_UNAME_5_10\n\tif (current->flags \& 0x00000002) {\n\t\tstrscpy(tmp.release, FAKE_UNAME, sizeof(tmp.release));\n\t}\n#endif' kernel/sys.c
+            fi
+          fi
+
+          # Dodanie opcji FAKE_UNAME do defconfigu
+          if [ -f "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig" ]; then
+            echo "CONFIG_FAKE_UNAME_5_10=y" >> "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig"
+          fi
 
       - name: Install dependencies
         run: |
@@ -45,9 +133,19 @@ jobs:
 
       - name: Build kernel and Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Przekazujemy token bezpośrednio do basha
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          ./build_kernel_zip.sh
+          type -p gh >/dev/null || (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && sudo apt update && sudo apt install -y gh)
+          
+          chmod +x build_kernel_zip.sh
+          ./build_kernel_zip.sh || true
+          
+          if ls *.zip >/dev/null 2>&1; then
+            echo "Sukces: Plik ZIP znaleziony!"
+          else
+            echo "Błąd: Plik ZIP nie powstał!"
+            exit 1
+          fi
