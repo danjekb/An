@@ -2,6 +2,9 @@ name: Build Kernel
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      -ksu-test
 
 permissions:
   contents: write
@@ -23,13 +26,47 @@ jobs:
 
       - name: Apply SUSFS patch
         run: |
-          if [ -f susfs_patch_to_5.4.patch ]; then
-            patch -p1 < susfs_patch_to_5.4.patch
-            echo "Patch SUSFS nałożony pomyślnie"
-          else
-            echo "Brak pliku susfs_patch_to_5.4.patch - przerywam!"
+          set -euo pipefail
+          PATCH_FILE="susfs_patch_to_5.4.patch"
+
+          if [ ! -f "$PATCH_FILE" ]; then
+            echo "Brak pliku $PATCH_FILE - przerywam!"
             exit 1
           fi
+
+          echo "=== git apply --check ==="
+          if git apply --check "$PATCH_FILE"; then
+            echo "git apply --check OK, applying patch with git apply"
+            git apply "$PATCH_FILE"
+            echo "Patch SUSFS nałożony pomyślnie (git apply)"
+          else
+            echo "git apply --check failed — trying git apply --reject to produce .rej files for inspection"
+            git apply --reject --whitespace=fix "$PATCH_FILE" || true
+
+            echo "Running patch fallback (dry-run) to try patch -p1 (for non-git-format patches)"
+            if patch --dry-run -p1 < "$PATCH_FILE"; then
+              patch -p1 < "$PATCH_FILE"
+              echo "Patch SUSFS nałożony pomyślnie (patch -p1)"
+            else
+              echo "patch --dry-run FAILED. Saving rejects for inspection."
+            fi
+
+            echo "===== REJECTS (if any) ====="
+            find . -name '*.rej' -print -exec sed -n '1,200p' {} \;
+            echo "===== END REJECTS ====="
+
+            echo "Please inspect .rej files — the patch likely targets a different kernel commit or file layout."
+            exit 1
+          fi
+
+      - name: Upload patch rejects (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-rejects
+          path: |
+            **/*.rej
+            **/*.orig
 
       - name: Inject Fake Uname Patches
         run: |
@@ -75,6 +112,23 @@ jobs:
             echo "CONFIG_FAKE_UNAME_5_10=y" >> "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig"
           fi
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential cpio curl dwarves flex git kmod \
+            libelf-dev libssl-dev python3 rsync sed tar unzip zip \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Restore clang cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/toolchain/clang
+          key: clang-r530567-${{ runner.os }}-v1
+
+      - name: Make build script executable
+        run: chmod +x build_kernel_zip.sh
+
       - name: Build kernel and Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +136,7 @@ jobs:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          type -p gh >/dev/null || (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && sudo apt update && sudo apt install gh -y)
+          type -p gh >/dev/null || (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && sudo apt update && sudo apt install -y gh)
           
           chmod +x build_kernel_zip.sh
           ./build_kernel_zip.sh || true
