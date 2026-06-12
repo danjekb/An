@@ -9,7 +9,7 @@ on:
       - main
 
 permissions:
-  contents: write  # Kluczowe: daje skryptowi prawa do tworzenia wydań
+  contents: write
 
 jobs:
   build:
@@ -30,12 +30,16 @@ jobs:
         run: |
           echo "=== Automatyczne wstrzykiwanie poprawek Fake Uname ==="
           
-          # 1. Patchowanie init/Kconfig
+          # 1. Zabezpieczenie mm/Kconfig przed błędami parsera (brak nowej linii na EOF)
+          if [ -f "mm/Kconfig" ]; then
+            echo "" >> mm/Kconfig
+            echo "[OK] mm/Kconfig zabezpieczony pustą linią."
+          fi
+
+          # 2. Patchowanie init/Kconfig
           if [ -f "init/Kconfig" ]; then
             if ! grep -q "FAKE_UNAME_NONE" init/Kconfig; then
               echo "[+] Patchowanie init/Kconfig..."
-              
-              # Tworzenie tymczasowego bloku konfiguracji choice
               cat << 'EOF' > kconfig_patch.tmp
           choice
               prompt "Fake uname kernel version"
@@ -68,8 +72,6 @@ jobs:
           
           endchoice
           EOF
-              
-              # Wklejenie bloku zaraz pod linijką: source "block/Kconfig"
               sed -i '/source "block\/Kconfig"/r kconfig_patch.tmp' init/Kconfig
               rm kconfig_patch.tmp
               echo "[OK] init/Kconfig zaktualizowany."
@@ -80,13 +82,25 @@ jobs:
             echo "[-] Błąd: Nie znaleziono init/Kconfig!" && exit 1
           fi
 
-          # 2. Patchowanie kernel/sys.c
+          # 3. Czyszczenie i patchowanie kernel/sys.c (Pełna automatyzacja)
           if [ -f "kernel/sys.c" ]; then
             if ! grep -q "CONFIG_FAKE_UNAME_" kernel/sys.c; then
-              echo "[+] Patchowanie kernel/sys.c..."
+              echo "[+] Usuwanie starych definicji i duplikatów newuname z kernel/sys.c..."
               
-              # Tworzenie całego bloku z makrami i poprawionym syscall_define
-              cat << 'EOF' > sys_patch.tmp
+              # Python bezlitośnie czyści wszelkie zduplikowane, stare lub urwane bloki SYSCALL_DEFINE1(newuname...)
+              python3 -c "
+          with open('kernel/sys.c', 'r') as f:
+              content = f.read()
+          import re
+          # Wyrażenie regularne usuwające całe bloki funkcji newuname wraz z klamrami
+          clean_content = re.sub(r'SYSCALL_DEFINE1\s*\(\s*newuname\s*,[\s\S]*?\}', '', content)
+          with open('kernel/sys.c', 'w') as f:
+              f.write(clean_content)
+          "
+              
+              echo "[+] Doklejanie poprawnego kodu Fake Uname na koniec kernel/sys.c..."
+              cat << 'EOF' >> kernel/sys.c
+          
           #ifdef CONFIG_FAKE_UNAME_5_4
           #define FAKE_UNAME "5.4.300"
           #elif defined(CONFIG_FAKE_UNAME_5_10)
@@ -121,27 +135,7 @@ jobs:
           	return 0;
           }
           EOF
-              
-              # Ten wielolinijkowy skrypt w pythonie bezpiecznie podmienia całą funkcję niezależnie od formatowania spacji/nowych linii
-              python3 -c "
-          import os
-          with open('kernel/sys.c', 'r') as f:
-              content = f.read()
-          with open('sys_patch.tmp', 'r') as f:
-              patch = f.read()
-          import re
-          # Szuka SYSCALL_DEFINE1(newuname, ...) aż do zamykającej klamry
-          pattern = r'SYSCALL_DEFINE1\s*\(\s*newuname\s*,[\s\S]*?\}'
-          if re.search(pattern, content):
-              new_content = re.sub(pattern, patch, content)
-              with open('kernel/sys.c', 'w') as f:
-                  f.write(new_content)
-              print('[OK] kernel/sys.c zaktualizowany pomyślnie.')
-          else:
-              print('[-] Błąd: Nie dopasowano funkcji newuname w sys.c')
-              exit(1)
-          "
-              rm sys_patch.tmp
+              echo "[OK] kernel/sys.c naprawiony i spatchowany."
             else
               echo "[!] Patch sys.c już istnieje. Pomijam."
             fi
@@ -149,8 +143,8 @@ jobs:
             echo "[-] Błąd: Nie znaleziono kernel/sys.c!" && exit 1
           fi
 
-          # 3. Patchowanie defconfigu
-          DEFCONFIG_PATH="arch/arm64/configs/a52sxq_kor_single_defconfig"
+          # 4. Patchowanie defconfigu w poprawnej ścieżce (w folderze vendor)
+          DEFCONFIG_PATH="arch/arm64/configs/vendor/a52sxq_kor_single_defconfig"
           if [ -f "$DEFCONFIG_PATH" ]; then
             if ! grep -q "CONFIG_FAKE_UNAME_" "$DEFCONFIG_PATH"; then
               echo "[+] Dodawanie flagi CONFIG_FAKE_UNAME_5_10=y do defconfigu..."
@@ -163,11 +157,6 @@ jobs:
             fi
           else
             echo "[-] Błąd: Nie znaleziono defconfigu w: $DEFCONFIG_PATH" && exit 1
-          fi
-          
-          # 4. Dorzucenie pustej linii na koniec mm/Kconfig jeśli wywala błąd parsera
-          if [ -f "mm/Kconfig" ]; then
-            echo "" >> mm/Kconfig
           fi
 
       - name: Install dependencies
@@ -189,7 +178,7 @@ jobs:
 
       - name: Build kernel and Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Przekazujemy token bezpośrednio do basha
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
