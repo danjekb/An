@@ -2,11 +2,6 @@ name: Build Kernel
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - ksu-next-oneui
-      - ksu-next-aosp
-      - main
 
 permissions:
   contents: write
@@ -25,6 +20,16 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+
+      - name: Apply SUSFS patch
+        run: |
+          if [ -f susfs_patch_to_5.4.patch ]; then
+            patch -p1 < susfs_patch_to_5.4.patch
+            echo "Patch SUSFS nałożony pomyślnie"
+          else
+            echo "Brak pliku susfs_patch_to_5.4.patch - przerywam!"
+            exit 1
+          fi
 
       - name: Inject Fake Uname Patches
         run: |
@@ -53,7 +58,6 @@ jobs:
           # Patchowanie CZYSTEGO kernel/sys.c
           if [ -f "kernel/sys.c" ]; then
             if ! grep -q "CONFIG_FAKE_UNAME_" kernel/sys.c; then
-              # Dodanie makr na początek
               echo "#ifdef CONFIG_FAKE_UNAME_5_10" > sys_patch.tmp
               echo "#define FAKE_UNAME \"5.10.200\"" >> sys_patch.tmp
               echo "#endif" >> sys_patch.tmp
@@ -61,13 +65,12 @@ jobs:
               mv kernel/sys.c.new kernel/sys.c
               rm sys_patch.tmp
               
-              # Wstrzyknięcie kodu w unikalne miejsce
               sed -i '/memcpy(&tmp, utsname(), sizeof(tmp));/a \
           #ifdef CONFIG_FAKE_UNAME_5_10\n\tif (current->flags \& 0x00000002) {\n\t\tstrscpy(tmp.release, FAKE_UNAME, sizeof(tmp.release));\n\t}\n#endif' kernel/sys.c
             fi
           fi
 
-          # Patchowanie defconfigu
+          # Dodanie opcji FAKE_UNAME do defconfigu
           if [ -f "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig" ]; then
             echo "CONFIG_FAKE_UNAME_5_10=y" >> "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig"
           fi
@@ -79,14 +82,11 @@ jobs:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          # Instalacja GitHub CLI
           type -p gh >/dev/null || (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && sudo apt update && sudo apt install gh -y)
           
           chmod +x build_kernel_zip.sh
-          # Uruchomienie skryptu
           ./build_kernel_zip.sh || true
           
-          # Weryfikacja czy ZIP istnieje
           if ls *.zip >/dev/null 2>&1; then
             echo "Sukces: Plik ZIP znaleziony!"
           else
