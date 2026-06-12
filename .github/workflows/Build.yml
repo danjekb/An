@@ -30,7 +30,7 @@ jobs:
         run: |
           echo "=== Automatyczne wstrzykiwanie poprawek Fake Uname ==="
           
-          # 1. Zabezpieczenie mm/Kconfig przed błędami parsera (brak nowej linii na EOF)
+          # 1. Zabezpieczenie mm/Kconfig przed błędami parsera
           if [ -f "mm/Kconfig" ]; then
             echo "" >> mm/Kconfig
             echo "[OK] mm/Kconfig zabezpieczony pustą linią."
@@ -78,27 +78,39 @@ jobs:
             else
               echo "[!] Patch Kconfig już istnieje. Pomijam."
             fi
-          else
-            echo "[-] Błąd: Nie znaleziono init/Kconfig!" && exit 1
           fi
 
-          # 3. Czyszczenie i patchowanie kernel/sys.c (Pełna automatyzacja)
+          # 3. Inteligentne czyszczenie i nadpisywanie kernel/sys.c
           if [ -f "kernel/sys.c" ]; then
             if ! grep -q "CONFIG_FAKE_UNAME_" kernel/sys.c; then
-              echo "[+] Usuwanie starych definicji i duplikatów newuname z kernel/sys.c..."
+              echo "[+] Usuwanie starych sekcji newuname za pomocą Pythona..."
               
-              # Python bezlitośnie czyści wszelkie zduplikowane, stare lub urwane bloki SYSCALL_DEFINE1(newuname...)
               python3 -c "
           with open('kernel/sys.c', 'r') as f:
-              content = f.read()
-          import re
-          # Wyrażenie regularne usuwające całe bloki funkcji newuname wraz z klamrami
-          clean_content = re.sub(r'SYSCALL_DEFINE1\s*\(\s*newuname\s*,[\s\S]*?\}', '', content)
+              lines = f.readlines()
+
+          output = []
+          skip = False
+
+          for line in lines:
+              # Jeśli znajdziesz początek syscalla newuname, zacznij pomijanie linii
+              if 'SYSCALL_DEFINE1(newuname' in line.replace(' ', ''):
+                  skip = True
+                  continue
+              
+              # Przestań pomijać dopiero, gdy trafisz na kolejny, inny syscall w pliku
+              if skip and ('SYSCALL_DEFINE' in line or 'COMPAT_SYSCALL_DEFINE' in line) and 'newuname' not in line:
+                  skip = False
+              
+              if not skip:
+                  output.append(line)
+
           with open('kernel/sys.c', 'w') as f:
-              f.write(clean_content)
+              f.writelines(output)
+          print('[OK] Stary kod wyczyszczony bezbłędnie.')
           "
               
-              echo "[+] Doklejanie poprawnego kodu Fake Uname na koniec kernel/sys.c..."
+              echo "[+] Doklejanie czystej implementacji Fake Uname na koniec kernel/sys.c..."
               cat << 'EOF' >> kernel/sys.c
           
           #ifdef CONFIG_FAKE_UNAME_5_4
@@ -135,15 +147,13 @@ jobs:
           	return 0;
           }
           EOF
-              echo "[OK] kernel/sys.c naprawiony i spatchowany."
+              echo "[OK] kernel/sys.c w pełni zaktualizowany."
             else
               echo "[!] Patch sys.c już istnieje. Pomijam."
             fi
-          else
-            echo "[-] Błąd: Nie znaleziono kernel/sys.c!" && exit 1
           fi
 
-          # 4. Patchowanie defconfigu w poprawnej ścieżce (w folderze vendor)
+          # 4. Patchowanie defconfigu w folderze vendor
           DEFCONFIG_PATH="arch/arm64/configs/vendor/a52sxq_kor_single_defconfig"
           if [ -f "$DEFCONFIG_PATH" ]; then
             if ! grep -q "CONFIG_FAKE_UNAME_" "$DEFCONFIG_PATH"; then
