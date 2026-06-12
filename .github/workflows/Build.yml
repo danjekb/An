@@ -26,9 +26,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Ustawienie nazwy CrapKernel
-        run: echo "-CrapKernel" > localversion
-
       - name: Inject Fake Uname Patches
         run: |
           echo "=== Automatyczne patchowanie ==="
