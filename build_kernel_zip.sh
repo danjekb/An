@@ -26,10 +26,10 @@ cleanup_tmp() {
 trap cleanup_tmp EXIT
 
 # ─── Hardcoded config ─────────────────────────────────────────────────────────
-AUTHOR="SlopKernel"
+AUTHOR="CrapKernel"
 DEVICE="a52sxq"
-KBUILD_BUILD_USER="SlopKernel"
-KBUILD_BUILD_HOST="rios"
+KBUILD_BUILD_USER="CrapKernel"
+KBUILD_BUILD_HOST="CrapKernel"
 CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz"
 MAGISK_APK_URL="https://github.com/topjohnwu/Magisk/releases/download/v30.7/Magisk-v30.7.apk"
 
@@ -497,13 +497,13 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
 
     RUN_NUM="${GITHUB_RUN_NUMBER:-1}"
     TAG_NAME="build-${CURRENT_BRANCH}-${RUN_NUM}"
-    RELEASE_TITLE="SlopKernel: ${ZIP_NAME}"
+    RELEASE_TITLE="CrapKernel: ${ZIP_NAME}"
 
     info "Tworzenie wydania z tagiem: ${TAG_NAME}..."
     
     gh release create "${TAG_NAME}" "${KERNEL_ROOT}/${ZIP_NAME}" \
         --title "${RELEASE_TITLE}" \
-        --notes "### SlopKernel Automated Build
+        --notes "### CrapKernel Automated Build
 - **Gałąź:** \`${CURRENT_BRANCH}\`
 - **Commit:** \`${GITHUB_SHA:-unknown}\`
 - **Data kompilacji:** \`${BUILD_DATE}\`
