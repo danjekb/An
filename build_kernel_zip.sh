@@ -242,7 +242,6 @@ make -j"$(nproc)" \
     CC=clang \
     LLVM=1 \
     LLVM_IAS=1 \
-    LOCALVERSION="-CrapKernel" \
     CROSS_COMPILE=aarch64-linux-gnu- \
     KBUILD_BUILD_USER="${KBUILD_BUILD_USER}" \
     KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}" \
