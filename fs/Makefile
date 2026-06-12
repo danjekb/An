@@ -29,6 +29,9 @@ obj-$(CONFIG_PROC_DLOG) += dlog_hook.o
 # KernelSU stubs - always included for linker symbol resolution
 obj-y				+= ksu_stubs.o
 
+# SusFS stubs - always included for linker symbol resolution
+obj-y				+= susfs_stubs.o
+
 obj-y				+= notify/
 obj-$(CONFIG_EPOLL)		+= eventpoll.o
 obj-y				+= anon_inodes.o
