@@ -89,12 +89,22 @@ jobs:
             **/*.rej
             **/*.orig
 
-      # === 3. URUCHAMIANIE SKRYPTU Z INLINE HOOKAMI SUSFS ===
+      # === 3. URUCHAMIANIE SKRYPTU Z INLINE HOOKAMI SUSFS + POPRAWKA DO REJECTA ===
       - name: Run SUSFS Inline Hook Patches
         run: |
           echo "=== Nadawanie uprawnień i uruchamianie skryptu susfs_inline_hook_patches.sh ==="
           chmod +x susfs_inline_hook_patches.sh
           ./susfs_inline_hook_patches.sh
+
+          echo "=== Ręczne poprawianie rejecta w fs/proc/task_mmu.c ==="
+          if [ -f "fs/proc/task_mmu.c" ]; then
+            if ! grep -q "bypass_orig_flow" fs/proc/task_mmu.c; then
+              sed -i '/show_smap_vma_flags(m, vma);/i #ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif' fs/proc/task_mmu.c
+              echo "[+] Pomyślnie zaaplikowano brakujący fragment do fs/proc/task_mmu.c!"
+            else
+              echo "[-] fs/proc/task_mmu.c był już zmodyfikowany, pomijam."
+            fi
+          fi
 
       - name: Install dependencies
         run: |
