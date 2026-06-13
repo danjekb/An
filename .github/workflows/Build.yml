@@ -44,61 +44,18 @@ jobs:
             echo "Przywrócono defconfig do stanu czystego."
           fi
 
-      # === 2. DOPIERO TERAZ NAKŁADANIE GŁÓWNEGO PATCHA SUSFS ===
-      - name: Apply SUSFS patch
-        run: |
-          set -euo pipefail
-          PATCH_FILE="susfs_patch_to_5.4.patch"
-
-          if [ ! -f "$PATCH_FILE" ]; then
-            echo "Brak pliku $PATCH_FILE - przerywam!"
-            exit 1
-          fi
-
-          echo "=== git apply --check ==="
-          if git apply --check "$PATCH_FILE"; then
-            echo "git apply --check OK, applying patch with git apply"
-            git apply "$PATCH_FILE"
-            echo "Patch SUSFS nałożony pomyślnie (git apply)"
-          else
-            echo "git apply --check failed — trying git apply --reject to produce .rej files for inspection"
-            git apply --reject --whitespace=fix "$PATCH_FILE" || true
-
-            echo "Running patch fallback (dry-run) to try patch -p1 (for non-git-format patches)"
-            if patch --dry-run -p1 < "$PATCH_FILE"; then
-              patch -p1 < "$PATCH_FILE"
-              echo "Patch SUSFS nałożony pomyślnie (patch -p1)"
-            else
-              echo "patch --dry-run FAILED. Saving rejects for inspection."
-            fi
-
-            echo "===== REJECTS (if any) ====="
-            find . -name '*.rej' -print -exec sed -n '1,200p' {} \;
-            echo "===== END REJECTS ====="
-
-            echo "Please inspect .rej files — the patch likely targets a different kernel commit or file layout."
-            exit 1
-          fi
-
-      - name: Upload patch rejects (if any)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: patch-rejects
-          path: |
-            **/*.rej
-            **/*.orig
-
-      # === 3. URUCHAMIANIE SKRYPTU Z INLINE HOOKAMI SUSFS + POPRAWKA DO REJECTA ===
+      # === 2. URUCHAMIANIE SKRYPTU Z INLINE HOOKAMI SUSFS + REZANIE STRUKTUR SEDEM ===
+      # (Pominęliśmy krok z głównym patchem, bo jądro ma już wgrane pliki SUSFS!)
       - name: Run SUSFS Inline Hook Patches
         run: |
           echo "=== Nadawanie uprawnień i uruchamianie skryptu susfs_inline_hook_patches.sh ==="
           chmod +x susfs_inline_hook_patches.sh
           ./susfs_inline_hook_patches.sh
 
-          echo "=== Ręczne poprawianie rejecta w fs/proc/task_mmu.c ==="
+          echo "=== Ręczne poprawianie braku w fs/proc/task_mmu.c ==="
           if [ -f "fs/proc/task_mmu.c" ]; then
             if ! grep -q "bypass_orig_flow" fs/proc/task_mmu.c; then
+              # Wstrzykujemy brakującą etykietę bypass_orig_flow bezpośrednio przed wywołaniem show_smap_vma_flags
               sed -i '/show_smap_vma_flags(m, vma);/i #ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif' fs/proc/task_mmu.c
               echo "[+] Pomyślnie zaaplikowano brakujący fragment do fs/proc/task_mmu.c!"
             else
