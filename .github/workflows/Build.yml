@@ -24,6 +24,27 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      # === 1. NAJPIERW CAŁKOWITE CZYSZCZENIE ZMIAN UNAME ===
+      - name: Revert Fake Uname Changes
+        run: |
+          echo "=== Cofanie zmian w strukturze uname ==="
+          
+          if [ -f "init/Kconfig" ]; then
+            git checkout -- init/Kconfig
+            echo "Przywrócono init/Kconfig do stanu czystego."
+          fi
+
+          if [ -f "kernel/sys.c" ]; then
+            git checkout -- kernel/sys.c
+            echo "Przywrócono kernel/sys.c do stanu czystego."
+          fi
+
+          if [ -f "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig" ]; then
+            git checkout -- arch/arm64/configs/vendor/a52sxq_kor_single_defconfig
+            echo "Przywrócono defconfig do stanu czystego."
+          fi
+
+      # === 2. DOPIERO TERAZ NAKŁADANIE GŁÓWNEGO PATCHA SUSFS ===
       - name: Apply SUSFS patch
         run: |
           set -euo pipefail
@@ -68,49 +89,12 @@ jobs:
             **/*.rej
             **/*.orig
 
-      - name: Inject Fake Uname Patches
+      # === 3. URUCHAMIANIE SKRYPTU Z INLINE HOOKAMI SUSFS ===
+      - name: Run SUSFS Inline Hook Patches
         run: |
-          echo "=== Automatyczne patchowanie ==="
-          
-          # Patchowanie init/Kconfig
-          if [ -f "init/Kconfig" ]; then
-            if ! grep -q "FAKE_UNAME_NONE" init/Kconfig; then
-              cat << 'EOF' > kconfig_patch.tmp
-          choice
-              prompt "Fake uname kernel version"
-              default FAKE_UNAME_NONE
-              help
-                Kernel side spoof for BPF.
-          config FAKE_UNAME_NONE
-              bool "None"
-          config FAKE_UNAME_5_10
-              bool "5.10"
-          endchoice
-          EOF
-              sed -i '/source "block\/Kconfig"/r kconfig_patch.tmp' init/Kconfig
-              rm kconfig_patch.tmp
-            fi
-          fi
-
-          # Patchowanie CZYSTEGO kernel/sys.c
-          if [ -f "kernel/sys.c" ]; then
-            if ! grep -q "CONFIG_FAKE_UNAME_" kernel/sys.c; then
-              echo "#ifdef CONFIG_FAKE_UNAME_5_10" > sys_patch.tmp
-              echo "#define FAKE_UNAME \"5.10.200\"" >> sys_patch.tmp
-              echo "#endif" >> sys_patch.tmp
-              cat sys_patch.tmp kernel/sys.c > kernel/sys.c.new
-              mv kernel/sys.c.new kernel/sys.c
-              rm sys_patch.tmp
-              
-              sed -i '/memcpy(&tmp, utsname(), sizeof(tmp));/a \
-          #ifdef CONFIG_FAKE_UNAME_5_10\n\tif (current->flags \& 0x00000002) {\n\t\tstrscpy(tmp.release, FAKE_UNAME, sizeof(tmp.release));\n\t}\n#endif' kernel/sys.c
-            fi
-          fi
-
-          # Dodanie opcji FAKE_UNAME do defconfigu
-          if [ -f "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig" ]; then
-            echo "CONFIG_FAKE_UNAME_5_10=y" >> "arch/arm64/configs/vendor/a52sxq_kor_single_defconfig"
-          fi
+          echo "=== Nadawanie uprawnień i uruchamianie skryptu susfs_inline_hook_patches.sh ==="
+          chmod +x susfs_inline_hook_patches.sh
+          ./susfs_inline_hook_patches.sh
 
       - name: Install dependencies
         run: |
